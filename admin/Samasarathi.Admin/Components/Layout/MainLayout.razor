@@ -1,0 +1,49 @@
+﻿@inherits LayoutComponentBase
+@inject AdminSession Session
+@inject NavigationManager Nav
+
+@* Every page with this layout needs a logged-in admin. Pages render only after that is confirmed,
+   so they can call the API straight away in OnInitializedAsync. *@
+@if (Session.IsLoggedIn)
+{
+    <div class="page">
+        <div class="sidebar">
+            <NavMenu />
+        </div>
+
+        <main>
+            <div class="top-row px-4">
+                <span class="text-muted small me-3">Signed in as @Session.Phone</span>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="LogoutAsync">Log out</button>
+            </div>
+
+            <article class="content px-4">
+                @Body
+            </article>
+        </main>
+    </div>
+}
+else
+{
+    <div class="p-5 text-muted">Loading…</div>
+}
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">🗙</span>
+</div>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Session.IsLoggedIn) await Session.RestoreAsync();
+        if (!Session.IsLoggedIn) Nav.NavigateTo("login");
+    }
+
+    private async Task LogoutAsync()
+    {
+        await Session.ClearAsync();
+        Nav.NavigateTo("login");
+    }
+}

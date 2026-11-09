@@ -1,0 +1,90 @@
+@Samasarathi.Api_HostAddress = http://localhost:5299
+@phone = 9876543210
+
+GET {{Samasarathi.Api_HostAddress}}/health
+
+###
+
+# Rainy evening: ₹10/km driver, 10 km trip, maps say 60 min
+POST {{Samasarathi.Api_HostAddress}}/api/fares/estimate
+Content-Type: application/json
+
+{
+  "ratePerKm": 10,
+  "distanceKm": 10,
+  "expectedMinutes": 60,
+  "isPeakHour": false,
+  "isRaining": true,
+  "trafficRatio": 2.4
+}
+
+###
+
+# 1. Ask for an OTP (dev code is always 123456)
+POST {{Samasarathi.Api_HostAddress}}/api/auth/otp/request
+Content-Type: application/json
+
+{ "phone": "{{phone}}" }
+
+###
+
+# 2. Verify it. Copy "token" from the response into @token below.
+POST {{Samasarathi.Api_HostAddress}}/api/auth/otp/verify
+Content-Type: application/json
+
+{ "phone": "{{phone}}", "code": "123456", "role": "driver" }
+
+###
+
+@token = paste-token-here
+
+GET {{Samasarathi.Api_HostAddress}}/api/drivers/me
+Authorization: Bearer {{token}}
+
+###
+
+PUT {{Samasarathi.Api_HostAddress}}/api/drivers/me/profile
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "fullName": "Ravi Kumar" }
+
+###
+
+# --- Admin (verification team) ---
+# Request an OTP for 9999999999 above, then verify with role "admin" and paste the token into @adminToken.
+POST {{Samasarathi.Api_HostAddress}}/api/auth/otp/verify
+Content-Type: application/json
+
+{ "phone": "9999999999", "code": "123456", "role": "admin" }
+
+###
+
+@adminToken = paste-admin-token-here
+@driverId = paste-driver-id-here
+
+GET {{Samasarathi.Api_HostAddress}}/api/admin/drivers/counts
+Authorization: Bearer {{adminToken}}
+
+###
+
+GET {{Samasarathi.Api_HostAddress}}/api/admin/drivers?status=InReview
+Authorization: Bearer {{adminToken}}
+
+###
+
+PUT {{Samasarathi.Api_HostAddress}}/api/admin/drivers/{{driverId}}/checks/DrivingLicence
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{ "result": "Failed", "notes": "Licence photo is blurry" }
+
+###
+
+POST {{Samasarathi.Api_HostAddress}}/api/admin/drivers/{{driverId}}/reject
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{ "reason": "Please upload a clearer photo of your driving licence." }
+
+###

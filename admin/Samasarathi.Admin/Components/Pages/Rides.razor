@@ -1,0 +1,158 @@
+@page "/rides"
+@inject ApiClient Api
+@inject NavigationManager Nav
+
+<PageTitle>Rides · Samasarathi Admin</PageTitle>
+
+<h1 class="h3 mb-3">Rides</h1>
+
+<ul class="nav nav-tabs mb-3">
+    @foreach (var (tab, count) in Tabs())
+    {
+        <li class="nav-item">
+            <a class="nav-link @(!Searching && tab == Filter ? "active" : "")" href="@UrlFor(tab, null)">
+                @Labels.Of(tab)
+                @if (count is { } c)
+                {
+                    <span class="badge rounded-pill @(tab == AdminRideFilter.Active && c > 0 ? "text-bg-primary" : "text-bg-light border") ms-1">@c</span>
+                }
+            </a>
+        </li>
+    }
+</ul>
+
+<form class="d-flex gap-2 mb-3 search" @onsubmit="SubmitSearch">
+    <input class="form-control" placeholder="Search rider or driver name, phone or vehicle number" @bind="_searchText" />
+    <button class="btn btn-outline-primary">Search</button>
+    @if (Searching)
+    {
+        <a class="btn btn-link" href="@UrlFor(Filter, null)">Clear</a>
+    }
+</form>
+
+@if (Searching)
+{
+    <p class="small text-muted">Results for “@Search” across all rides.</p>
+}
+
+<ErrorAlert Message="@_error" OnRetry="LoadAsync" />
+
+@if (_rides is null)
+{
+    @if (_error is null)
+    {
+        <p class="text-muted">Loading…</p>
+    }
+}
+else if (_rides.Count == 0)
+{
+    <p class="text-muted">@(Searching ? "No rides match your search." : "No rides here.")</p>
+}
+else
+{
+    <table class="table table-hover align-middle rides">
+        <thead>
+            <tr>
+                <th>Requested</th>
+                <th>Rider</th>
+                <th>Driver</th>
+                <th>Status</th>
+                <th class="text-end">Distance</th>
+                <th class="text-end">Fare</th>
+                <th>Ratings</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var r in _rides)
+            {
+                <tr role="button" @onclick="@(() => Nav.NavigateTo($"rides/{r.Id}"))">
+                    <td><a href="rides/@r.Id" class="text-decoration-none">@Labels.When(r.RequestedAt)</a></td>
+                    <td>
+                        @r.RiderName
+                        <div class="small text-muted">@r.RiderPhone</div>
+                    </td>
+                    <td>
+                        @if (r.DriverName is null)
+                        {
+                            <span class="text-muted">—</span>
+                        }
+                        else
+                        {
+                            @r.DriverName
+                            <div class="small text-muted">
+                                @r.DriverPhone@(r.VehicleNumber is null ? "" : " · ")<span class="font-monospace">@r.VehicleNumber</span>
+                            </div>
+                        }
+                    </td>
+                    <td><span class="badge @Labels.Badge(r.Status)">@Labels.Of(r.Status)</span></td>
+                    <td class="text-end">@r.DistanceKm km</td>
+                    <td class="text-end">₹@r.Fare.ToString("0")</td>
+                    <td class="small">
+                        <div title="Rider rated the driver">Driver: <span class="text-warning">@Labels.Stars(r.RatingForDriver)</span></div>
+                        <div title="Driver rated the rider">Rider: <span class="text-warning">@Labels.Stars(r.RatingForRider)</span></div>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    @if (_rides.Count >= 100)
+    {
+        <p class="small text-muted">Showing the latest 100. Search to narrow down.</p>
+    }
+}
+
+@code {
+    // Query-string binding doesn't support enums, so the filter is parsed by hand.
+    [SupplyParameterFromQuery(Name = "filter")] public string? FilterText { get; set; }
+    [SupplyParameterFromQuery] public string? Search { get; set; }
+
+    private AdminRideFilter Filter =>
+        Enum.TryParse<AdminRideFilter>(FilterText, ignoreCase: true, out var f) ? f : AdminRideFilter.Active;
+
+    // A search looks across every ride, so the tabs don't apply while searching.
+    private bool Searching => !string.IsNullOrWhiteSpace(Search);
+
+    private List<AdminRideSummary>? _rides;
+    private AdminRideCounts? _counts;
+    private string? _searchText;
+    private string? _error;
+
+    protected override Task OnParametersSetAsync()
+    {
+        _searchText = Search;
+        return LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _rides = null;
+        try
+        {
+            var counts = Api.RideCountsAsync();
+            _rides = await Api.RidesAsync(Searching ? AdminRideFilter.All : Filter, Search);
+            _counts = await counts;
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void SubmitSearch() => Nav.NavigateTo(UrlFor(Filter, _searchText));
+
+    private string UrlFor(AdminRideFilter filter, string? search) =>
+        Nav.GetUriWithQueryParameters(Nav.ToAbsoluteUri("rides").ToString(), new Dictionary<string, object?>
+        {
+            ["filter"] = filter == AdminRideFilter.Active ? null : filter.ToString(),
+            ["search"] = string.IsNullOrWhiteSpace(search) ? null : search.Trim(),
+        });
+
+    private IEnumerable<(AdminRideFilter, int?)> Tabs()
+    {
+        yield return (AdminRideFilter.Active, _counts?.Active);
+        yield return (AdminRideFilter.Completed, null);
+        yield return (AdminRideFilter.Unsuccessful, null);
+        yield return (AdminRideFilter.All, _counts?.Total);
+    }
+}

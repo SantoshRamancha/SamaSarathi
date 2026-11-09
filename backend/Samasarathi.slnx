@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/admin/">
+    <Project Path="../admin/Samasarathi.Admin/Samasarathi.Admin.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Samasarathi.Api/Samasarathi.Api.csproj" />
+    <Project Path="src/Samasarathi.Application/Samasarathi.Application.csproj" />
+    <Project Path="src/Samasarathi.Domain/Samasarathi.Domain.csproj" />
+    <Project Path="src/Samasarathi.Infrastructure/Samasarathi.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Samasarathi.Tests/Samasarathi.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,236 @@
+@page "/drivers/{Id:guid}"
+@inject ApiClient Api
+@inject IJSRuntime JS
+
+<PageTitle>@(_driver?.FullName ?? "Driver") · Samasarathi Admin</PageTitle>
+
+<a href="" class="small text-decoration-none">← Back to drivers</a>
+
+<ErrorAlert Message="@_loadError" OnRetry="LoadAsync" />
+
+@if (_driver is { } d)
+{
+    var inReview = d.Status == VerificationStatus.InReview;
+    var allPassed = d.Checks.Count > 0 && d.Checks.All(c => c.Result == CheckResult.Passed);
+
+    <div class="d-flex align-items-center gap-3 mt-2 mb-3">
+        <h1 class="h3 mb-0">@d.FullName</h1>
+        <StatusBadge Status="d.Status" />
+    </div>
+
+    @if (d.Status == VerificationStatus.Rejected && d.RejectionReason is not null)
+    {
+        <div class="alert alert-warning">
+            <strong>Sent back to the driver:</strong> @d.RejectionReason
+            <div class="small">by @d.ReviewedBy on @Labels.When(d.ReviewedAt). Waiting for the driver to fix and resubmit.</div>
+        </div>
+    }
+    else if (d.Status == VerificationStatus.Approved)
+    {
+        <div class="alert alert-success">Approved by @d.ReviewedBy on @Labels.When(d.ReviewedAt).</div>
+    }
+    else if (d.Status == VerificationStatus.Pending)
+    {
+        <div class="alert alert-secondary">This driver hasn't submitted their registration yet.</div>
+    }
+
+    <div class="row g-3">
+        <div class="col-lg-4">
+            <div class="card mb-3">
+                <div class="card-body">
+                    <dl class="row mb-0 small">
+                        <dt class="col-5">Phone</dt><dd class="col-7">@d.Phone</dd>
+                        <dt class="col-5">Vehicle</dt>
+                        <dd class="col-7">
+                            @if (d.VehicleNumber is null)
+                            {
+                                <span class="text-muted">—</span>
+                            }
+                            else
+                            {
+                                <span class="font-monospace">@d.VehicleNumber</span><br />
+                                @d.VehicleType@(d.VehicleModel is null ? "" : $" · {d.VehicleModel}")
+                            }
+                        </dd>
+                        <dt class="col-5">Rate</dt><dd class="col-7">@(d.RatePerKm > 0 ? $"₹{d.RatePerKm:0.##} / km" : "—")</dd>
+                        <dt class="col-5">Registered</dt><dd class="col-7">@Labels.When(d.CreatedAt)</dd>
+                        <dt class="col-5">Submitted</dt><dd class="col-7">@Labels.When(d.SubmittedAt)</dd>
+                    </dl>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-8">
+            <DocumentViewer DriverId="d.Id" Documents="d.Documents" />
+        </div>
+    </div>
+
+    <h2 class="h5 mt-4">Background checks</h2>
+    @if (d.Checks.Count == 0)
+    {
+        <p class="text-muted">Checks open when the driver submits.</p>
+    }
+    else
+    {
+        <div class="list-group mb-3">
+            @foreach (var check in d.Checks)
+            {
+                <div class="list-group-item">
+                    <div class="d-flex flex-wrap align-items-start gap-3">
+                        <div class="flex-grow-1 check-text">
+                            <div class="fw-semibold">
+                                @Labels.Of(check.Type)
+                                <span class="badge @Labels.Badge(check.Result) ms-1">@check.Result</span>
+                            </div>
+                            <div class="small text-muted">@Labels.Guidance(check.Type)</div>
+                            @if (check.CheckedAt is not null)
+                            {
+                                <div class="small text-muted">Recorded by @check.CheckedBy on @Labels.When(check.CheckedAt)</div>
+                            }
+                        </div>
+                        @if (inReview)
+                        {
+                            <div class="check-actions">
+                                <input class="form-control form-control-sm mb-2" placeholder="Note (required to fail)"
+                                       @bind="_notes[check.Type]" maxlength="500" />
+                                <div class="btn-group btn-group-sm">
+                                    <button class="btn btn-outline-success" disabled="@_busy"
+                                            @onclick="() => RecordAsync(check.Type, CheckResult.Passed)">Pass</button>
+                                    <button class="btn btn-outline-danger" disabled="@_busy"
+                                            @onclick="() => RecordAsync(check.Type, CheckResult.Failed)">Fail</button>
+                                    @if (check.Result != CheckResult.Pending)
+                                    {
+                                        <button class="btn btn-outline-secondary" disabled="@_busy"
+                                                @onclick="() => RecordAsync(check.Type, CheckResult.Pending)">Undo</button>
+                                    }
+                                </div>
+                            </div>
+                        }
+                        else if (check.Notes is not null)
+                        {
+                            <div class="small">@check.Notes</div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    <ErrorAlert Message="@_actionError" />
+
+    @if (inReview)
+    {
+        <div class="row g-3 mb-4">
+            <div class="col-md-6">
+                <div class="card h-100 border-success">
+                    <div class="card-body">
+                        <h3 class="h6">Approve</h3>
+                        <p class="small text-muted">
+                            @(allPassed ? "All checks passed. The driver can start taking rides once subscribed."
+                                        : "Every check must pass before approval.")
+                        </p>
+                        <button class="btn btn-success" disabled="@(_busy || !allPassed)" @onclick="ApproveAsync">Approve driver</button>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card h-100 border-warning">
+                    <div class="card-body">
+                        <h3 class="h6">Request changes</h3>
+                        <textarea class="form-control mb-2" rows="3" maxlength="500" @bind="_reason"
+                                  placeholder="What should the driver fix? They will see this message."></textarea>
+                        <button class="btn btn-warning" disabled="@_busy" @onclick="RejectAsync">Send back to driver</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (d.History.Count > 0)
+    {
+        <h2 class="h6 mt-4 text-muted">Earlier submissions</h2>
+        <table class="table table-sm small">
+            <thead><tr><th>Opened</th><th>Check</th><th>Result</th><th>Note</th><th>By</th></tr></thead>
+            <tbody>
+                @foreach (var h in d.History)
+                {
+                    <tr>
+                        <td>@Labels.When(h.CreatedAt)</td>
+                        <td>@Labels.Of(h.Type)</td>
+                        <td><span class="badge @Labels.Badge(h.Result)">@h.Result</span></td>
+                        <td>@h.Notes</td>
+                        <td>@h.CheckedBy</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+else if (_loadError is null)
+{
+    <p class="text-muted mt-3">Loading…</p>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private AdminDriverDetail? _driver;
+    private readonly Dictionary<VerificationCheckType, string?> _notes = [];
+    private string? _reason;
+    private bool _busy;
+    private string? _loadError;
+    private string? _actionError;
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loadError = null;
+        try
+        {
+            Show(await Api.DriverAsync(Id));
+        }
+        catch (ApiException ex)
+        {
+            _loadError = ex.Message;
+        }
+    }
+
+    private void Show(AdminDriverDetail driver)
+    {
+        _driver = driver;
+        foreach (var check in driver.Checks) _notes[check.Type] = check.Notes;
+        // Suggest a message for the driver built from the failed checks; the reviewer can edit it.
+        var failed = driver.Checks.Where(c => c.Result == CheckResult.Failed && c.Notes is not null).ToList();
+        if (string.IsNullOrWhiteSpace(_reason) && failed.Count > 0)
+            _reason = string.Join(" ", failed.Select(c => $"{Labels.Of(c.Type)}: {c.Notes}"));
+    }
+
+    private Task RecordAsync(VerificationCheckType type, CheckResult result) =>
+        ActAsync(() => Api.RecordCheckAsync(Id, type, result, _notes.GetValueOrDefault(type)));
+
+    private async Task ApproveAsync()
+    {
+        if (await JS.InvokeAsync<bool>("confirm", $"Approve {_driver!.FullName}? They will be able to take rides."))
+            await ActAsync(() => Api.ApproveAsync(Id));
+    }
+
+    private Task RejectAsync() => ActAsync(() => Api.RejectAsync(Id, _reason ?? ""));
+
+    private async Task ActAsync(Func<Task<AdminDriverDetail>> action)
+    {
+        _busy = true;
+        _actionError = null;
+        try
+        {
+            Show(await action());
+        }
+        catch (ApiException ex)
+        {
+            _actionError = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

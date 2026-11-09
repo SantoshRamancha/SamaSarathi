@@ -1,0 +1,271 @@
+@page "/subscriptions"
+@inject ApiClient Api
+@inject NavigationManager Nav
+
+<PageTitle>Subscriptions · Samasarathi Admin</PageTitle>
+
+<h1 class="h3 mb-3">Driver subscriptions</h1>
+
+@if (_settings is { } cfg)
+{
+    <p class="small text-muted">
+        @if (!cfg.Enabled)
+        {
+            <strong>Subscriptions are switched off:</strong> <span>every approved driver can take rides.</span>
+        }
+        else
+        {
+            <span>@cfg.PlanName plan <strong>₹@cfg.MonthlyPrice.ToString("0.##")</strong> for @cfg.PlanDays days ·
+            @(cfg.TrialDays > 0 ? $"{cfg.TrialDays}-day free trial" : "no free trial") ·
+            @cfg.GraceDays grace day@(cfg.GraceDays == 1 ? "" : "s") ·
+            warning @cfg.ExpiryWarningDays day@(cfg.ExpiryWarningDays == 1 ? "" : "s") before the end ·
+            online payment @(cfg.PaymentsEnabled ? "on" : "not set up yet").
+            These are set in the API's <code>Subscription</code> config.</span>
+        }
+    </p>
+}
+
+<ul class="nav nav-tabs mb-3">
+    @foreach (var (tab, count) in Tabs())
+    {
+        <li class="nav-item">
+            <a class="nav-link @(!Searching && tab == Filter ? "active" : "")" href="@UrlFor(tab, null)">
+                @Labels.Of(tab)
+                @if (count is { } c)
+                {
+                    <span class="badge rounded-pill @(tab is AdminSubscriptionFilter.ExpiringSoon or AdminSubscriptionFilter.Expired && c > 0 ? "text-bg-warning" : "text-bg-light border") ms-1">@c</span>
+                }
+            </a>
+        </li>
+    }
+</ul>
+
+<form class="d-flex gap-2 mb-3 search" @onsubmit="SubmitSearch">
+    <input class="form-control" placeholder="Search name, phone or vehicle number" @bind="_searchText" />
+    <button class="btn btn-outline-primary">Search</button>
+    @if (Searching)
+    {
+        <a class="btn btn-link" href="@UrlFor(Filter, null)">Clear</a>
+    }
+</form>
+
+@if (Searching)
+{
+    <p class="small text-muted">Results for “@Search” across all approved drivers.</p>
+}
+
+<ErrorAlert Message="@_error" OnRetry="LoadAsync" />
+
+@if (_message is not null)
+{
+    <div class="alert alert-success py-2">@_message</div>
+}
+
+@if (_rows is null)
+{
+    @if (_error is null)
+    {
+        <p class="text-muted">Loading…</p>
+    }
+}
+else if (_rows.Count == 0)
+{
+    <p class="text-muted">No drivers here.</p>
+}
+else
+{
+    <table class="table align-middle subscriptions">
+        <thead>
+            <tr>
+                <th>Driver</th>
+                <th>Vehicle</th>
+                <th>Status</th>
+                <th>Valid until</th>
+                <th>Last period</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var r in _rows)
+            {
+                <tr>
+                    <td>
+                        <a href="drivers/@r.DriverId" class="fw-semibold text-decoration-none">@r.FullName</a>
+                        <div class="small text-muted">@r.Phone</div>
+                    </td>
+                    <td>
+                        @if (r.VehicleNumber is null)
+                        {
+                            <span class="text-muted">—</span>
+                        }
+                        else
+                        {
+                            <span class="font-monospace">@r.VehicleNumber</span>
+                        }
+                    </td>
+                    <td>
+                        <span class="badge @Labels.Badge(r.Phase)">@Labels.Of(r.Phase, r.IsTrial)</span>
+                        @if (r.ExpiringSoon && r.Phase == SubscriptionPhase.Active)
+                        {
+                            <span class="badge text-bg-warning ms-1">ending</span>
+                        }
+                    </td>
+                    <td>
+                        @Labels.When(r.ValidUntil)
+                        @if (r.DaysLeft is { } d)
+                        {
+                            <div class="small text-muted">@d day@(d == 1 ? "" : "s") left</div>
+                        }
+                    </td>
+                    <td class="small">
+                        @if (r.LastKind is { } k)
+                        {
+                            <span>@k</span>
+                            @if (!string.IsNullOrWhiteSpace(r.LastNote))
+                            {
+                                <div class="text-muted">@r.LastNote</div>
+                            }
+                        }
+                        else
+                        {
+                            <span class="text-muted">—</span>
+                        }
+                    </td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-outline-primary" @onclick="() => OpenGrant(r)">Add days</button>
+                    </td>
+                </tr>
+                @if (_granting?.DriverId == r.DriverId)
+                {
+                    <tr class="table-light">
+                        <td colspan="6">
+                            <form class="row g-2 align-items-end" @onsubmit="GrantAsync">
+                                <div class="col-auto">
+                                    <label class="form-label small mb-0">Days to add</label>
+                                    <input type="number" min="1" max="366" class="form-control form-control-sm" style="width: 6rem" @bind="_days" />
+                                </div>
+                                <div class="col">
+                                    <label class="form-label small mb-0">Reason (kept on record)</label>
+                                    <input class="form-control form-control-sm" maxlength="200" placeholder="e.g. Paid by UPI to the office, ref 12345" @bind="_note" />
+                                </div>
+                                <div class="col-auto d-flex gap-2">
+                                    <button class="btn btn-sm btn-primary" disabled="@_saving">@(_saving ? "Saving…" : "Add days")</button>
+                                    <button type="button" class="btn btn-sm btn-link" @onclick="CloseGrant">Cancel</button>
+                                </div>
+                            </form>
+                            @if (_grantError is not null)
+                            {
+                                <div class="text-danger small mt-1">@_grantError</div>
+                            }
+                            <div class="small text-muted mt-1">If the driver is still covered, the days start after their current end.</div>
+                        </td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    // Query-string binding doesn't support enums, so the filter is parsed by hand.
+    [SupplyParameterFromQuery(Name = "filter")] public string? FilterText { get; set; }
+    [SupplyParameterFromQuery] public string? Search { get; set; }
+
+    private AdminSubscriptionFilter Filter =>
+        Enum.TryParse<AdminSubscriptionFilter>(FilterText, ignoreCase: true, out var f) ? f : AdminSubscriptionFilter.ExpiringSoon;
+
+    private bool Searching => !string.IsNullOrWhiteSpace(Search);
+
+    private List<AdminSubscriptionSummary>? _rows;
+    private AdminSubscriptionCounts? _counts;
+    private AdminSubscriptionSettings? _settings;
+    private string? _searchText;
+    private string? _error;
+    private string? _message;
+
+    private AdminSubscriptionSummary? _granting;
+    private int _days = 30;
+    private string? _note;
+    private string? _grantError;
+    private bool _saving;
+
+    protected override Task OnParametersSetAsync()
+    {
+        _searchText = Search;
+        _granting = null;
+        return LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _rows = null;
+        try
+        {
+            var counts = Api.SubscriptionCountsAsync();
+            var settings = Api.SubscriptionSettingsAsync();
+            _rows = await Api.SubscriptionsAsync(Searching ? AdminSubscriptionFilter.All : Filter, Search);
+            _counts = await counts;
+            _settings = await settings;
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void OpenGrant(AdminSubscriptionSummary row)
+    {
+        _granting = _granting?.DriverId == row.DriverId ? null : row;
+        _days = 30;
+        _note = null;
+        _grantError = null;
+        _message = null;
+    }
+
+    private void CloseGrant() => _granting = null;
+
+    private async Task GrantAsync()
+    {
+        if (_granting is not { } row) return;
+        if (_days is < 1 or > 366) { _grantError = "Enter between 1 and 366 days."; return; }
+        if (string.IsNullOrWhiteSpace(_note) || _note.Trim().Length < 3) { _grantError = "Add a short reason."; return; }
+
+        _saving = true;
+        _grantError = null;
+        try
+        {
+            await Api.GrantSubscriptionAsync(row.DriverId, _days, _note.Trim());
+            _message = $"Added {_days} day{(_days == 1 ? "" : "s")} for {row.FullName}.";
+            _granting = null;
+            await LoadAsync();
+        }
+        catch (ApiException ex)
+        {
+            _grantError = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void SubmitSearch() => Nav.NavigateTo(UrlFor(Filter, _searchText));
+
+    private string UrlFor(AdminSubscriptionFilter filter, string? search) =>
+        Nav.GetUriWithQueryParameters(Nav.ToAbsoluteUri("subscriptions").ToString(), new Dictionary<string, object?>
+        {
+            ["filter"] = filter == AdminSubscriptionFilter.ExpiringSoon ? null : filter.ToString(),
+            ["search"] = string.IsNullOrWhiteSpace(search) ? null : search.Trim(),
+        });
+
+    private IEnumerable<(AdminSubscriptionFilter, int?)> Tabs()
+    {
+        yield return (AdminSubscriptionFilter.ExpiringSoon, _counts?.ExpiringSoon);
+        yield return (AdminSubscriptionFilter.Active, _counts?.Active);
+        yield return (AdminSubscriptionFilter.Trial, _counts?.Trial);
+        yield return (AdminSubscriptionFilter.Grace, _counts?.Grace);
+        yield return (AdminSubscriptionFilter.Expired, _counts?.Expired);
+        yield return (AdminSubscriptionFilter.None, _counts?.None);
+    }
+}

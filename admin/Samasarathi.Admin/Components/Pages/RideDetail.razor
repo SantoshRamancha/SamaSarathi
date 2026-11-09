@@ -1,0 +1,152 @@
+@page "/rides/{Id:guid}"
+@inject ApiClient Api
+
+<PageTitle>Ride · Samasarathi Admin</PageTitle>
+
+<a href="rides" class="small text-decoration-none">← Back to rides</a>
+
+<ErrorAlert Message="@_error" OnRetry="LoadAsync" />
+
+@if (_ride is { } r)
+{
+    <div class="d-flex align-items-center gap-3 mt-2 mb-3">
+        <h1 class="h3 mb-0">Ride on @Labels.When(r.RequestedAt)</h1>
+        <span class="badge @Labels.Badge(r.Status)">@Labels.Of(r.Status)</span>
+    </div>
+
+    @if (r.CancelReason is not null)
+    {
+        <div class="alert alert-warning">@r.CancelReason</div>
+    }
+
+    <div class="row g-3">
+        <div class="col-lg-6">
+            <div class="card h-100">
+                <div class="card-header">People</div>
+                <div class="card-body">
+                    <dl class="row mb-0 small">
+                        <dt class="col-4">Rider</dt>
+                        <dd class="col-8">@r.RiderName<br />@r.RiderPhone</dd>
+                        <dt class="col-4">Driver</dt>
+                        <dd class="col-8">
+                            @if (r.DriverId is null)
+                            {
+                                <span class="text-muted">No driver</span>
+                            }
+                            else
+                            {
+                                <a href="drivers/@r.DriverId">@r.DriverName</a><br />
+                                @r.DriverPhone<br />
+                                @r.VehicleType <span class="font-monospace">@r.VehicleNumber</span>
+                            }
+                        </dd>
+                    </dl>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card h-100">
+                <div class="card-header">Trip and fare</div>
+                <div class="card-body">
+                    <dl class="row mb-0 small">
+                        <dt class="col-5">Pickup</dt>
+                        <dd class="col-7">@Coords(r.PickupLatitude, r.PickupLongitude)</dd>
+                        <dt class="col-5">Drop-off</dt>
+                        <dd class="col-7">@Coords(r.DropLatitude, r.DropLongitude)</dd>
+                        <dt class="col-5">Estimate</dt>
+                        <dd class="col-7">@r.EstimatedDistanceKm km · @r.EstimatedMinutes.ToString("0") min · ₹@r.EstimatedFare.ToString("0")</dd>
+                        <dt class="col-5">Charged by</dt>
+                        <dd class="col-7">@(r.PricingMode == PricingMode.Time ? "Travel time (peak hour or rain)" : "Distance") at ₹@r.RatePerKm.ToString("0.##")/km</dd>
+                        <dt class="col-5">Actual</dt>
+                        <dd class="col-7">
+                            @if (r.FinalFare is { } fare)
+                            {
+                                <span>₹@fare.ToString("0") · @(r.ActualMinutes?.ToString("0") ?? "?") min</span>
+                            }
+                            else
+                            {
+                                <span class="text-muted">Trip not completed</span>
+                            }
+                        </dd>
+                    </dl>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <h2 class="h5 mt-4">Timeline</h2>
+    <ul class="list-group mb-3">
+        @foreach (var (label, at) in Timeline(r))
+        {
+            <li class="list-group-item d-flex justify-content-between">
+                <span>@label</span><span class="text-muted">@Labels.When(at)</span>
+            </li>
+        }
+    </ul>
+
+    <h2 class="h5 mt-4">Ratings</h2>
+    <div class="row g-3">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <div class="small text-muted">Rider rated the driver</div>
+                    <div class="fs-5 text-warning">@Labels.Stars(r.RatingForDriver)</div>
+                    @if (!string.IsNullOrWhiteSpace(r.CommentForDriver))
+                    {
+                        <div class="small">“@r.CommentForDriver”</div>
+                    }
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <div class="small text-muted">Driver rated the rider</div>
+                    <div class="fs-5 text-warning">@Labels.Stars(r.RatingForRider)</div>
+                    @if (!string.IsNullOrWhiteSpace(r.CommentForRider))
+                    {
+                        <div class="small">“@r.CommentForRider”</div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+else if (_error is null)
+{
+    <p class="text-muted mt-3">Loading…</p>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private AdminRideDetail? _ride;
+    private string? _error;
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _ride = null;
+        try
+        {
+            _ride = await Api.RideAsync(Id);
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Status == System.Net.HttpStatusCode.NotFound ? "That ride doesn't exist." : ex.Message;
+        }
+    }
+
+    private static string Coords(double lat, double lng) => $"{lat:0.00000}, {lng:0.00000}";
+
+    private static IEnumerable<(string, DateTimeOffset?)> Timeline(AdminRideDetail r)
+    {
+        yield return ("Requested", r.RequestedAt);
+        if (r.AcceptedAt is not null) yield return ("Accepted by driver", r.AcceptedAt);
+        if (r.StartedAt is not null) yield return ("Trip started", r.StartedAt);
+        if (r.CompletedAt is not null) yield return ("Completed", r.CompletedAt);
+        if (r.CancelledAt is not null) yield return ("Ended without a trip", r.CancelledAt);
+    }
+}

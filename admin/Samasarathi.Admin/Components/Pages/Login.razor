@@ -1,0 +1,118 @@
+@page "/login"
+@layout LoginLayout
+@inject ApiClient Api
+@inject AdminSession Session
+@inject NavigationManager Nav
+@inject IWebHostEnvironment Env
+
+<PageTitle>Log in · Samasarathi Admin</PageTitle>
+
+<div class="card shadow-sm login-card">
+    <div class="card-body p-4">
+        <h1 class="h4 mb-1">Samasarathi Admin</h1>
+        <p class="text-muted mb-4">Driver verification team</p>
+
+        @if (!_codeSent)
+        {
+            <form @onsubmit="SendCodeAsync">
+                <label class="form-label" for="phone">Mobile number</label>
+                <div class="input-group mb-3">
+                    <span class="input-group-text">+91</span>
+                    <input id="phone" class="form-control" @bind="_phone" @ref="_phoneInput" inputmode="numeric" autocomplete="tel" />
+                </div>
+                <button class="btn btn-primary w-100" disabled="@_busy">@(_busy ? "Sending…" : "Get OTP")</button>
+            </form>
+        }
+        else
+        {
+            <form @onsubmit="VerifyAsync">
+                <p class="mb-2">Enter the code sent to +91 @_phone</p>
+                @if (Env.IsDevelopment())
+                {
+                    <p class="small text-muted">Development: the code is 123456.</p>
+                }
+                <input class="form-control mb-3 otp" @bind="_code" @ref="_codeInput" inputmode="numeric" maxlength="6" autocomplete="one-time-code" />
+                <button class="btn btn-primary w-100" disabled="@_busy">@(_busy ? "Checking…" : "Log in")</button>
+                <button type="button" class="btn btn-link px-0 mt-2" @onclick="ChangeNumber">Change number</button>
+            </form>
+        }
+
+        @if (_error is not null)
+        {
+            <div class="alert alert-danger mt-3 mb-0">@_error</div>
+        }
+    </div>
+</div>
+
+@code {
+    private string _phone = "";
+    private string _code = "";
+    private bool _codeSent;
+    private bool _busy;
+    private string? _error;
+    private ElementReference _phoneInput;
+    private ElementReference _codeInput;
+    private bool _focusPending = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Session.RestoreAsync();
+        if (Session.IsLoggedIn) Nav.NavigateTo("");
+    }
+
+    // The HTML "autofocus" attribute only works on page load, not when Blazor swaps the form,
+    // so focus the visible input after each step change.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focusPending) return;
+        _focusPending = false;
+        try
+        {
+            await (_codeSent ? _codeInput : _phoneInput).FocusAsync();
+        }
+        catch (InvalidOperationException)
+        {
+            // Input not rendered yet (still loading); the next step change will focus it.
+        }
+    }
+
+    private Task SendCodeAsync() => RunAsync(async () =>
+    {
+        await Api.RequestOtpAsync(_phone);
+        _codeSent = true;
+        _focusPending = true;
+    });
+
+    private Task VerifyAsync() => RunAsync(async () =>
+    {
+        var auth = await Api.VerifyOtpAsync(_phone, _code.Trim());
+        await Session.SaveAsync(auth.Token, auth.Phone);
+        Nav.NavigateTo("");
+    });
+
+    private void ChangeNumber()
+    {
+        _codeSent = false;
+        _code = "";
+        _error = null;
+        _focusPending = true;
+    }
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            await action();
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

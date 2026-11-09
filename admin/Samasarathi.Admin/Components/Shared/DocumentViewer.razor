@@ -1,0 +1,106 @@
+@implements IAsyncDisposable
+@inject ApiClient Api
+@inject IJSRuntime JS
+
+<div class="card">
+    <div class="card-header">
+        <ul class="nav nav-pills card-header-pills">
+            @foreach (var type in Enum.GetValues<DocumentType>())
+            {
+                var doc = Documents.FirstOrDefault(d => d.Type == type);
+                <li class="nav-item">
+                    <button class="nav-link @(type == _selected ? "active" : "") @(doc is null ? "text-muted" : "")"
+                            disabled="@(doc is null)" @onclick="() => ShowAsync(type)">
+                        @Labels.Of(type)@(doc is null ? " (missing)" : "")
+                    </button>
+                </li>
+            }
+        </ul>
+    </div>
+    <div class="card-body document-viewer">
+        @if (_error is not null)
+        {
+            <div class="alert alert-danger">@_error</div>
+        }
+        else if (_url is null)
+        {
+            <p class="text-muted">@(Documents.Count == 0 ? "No documents uploaded." : "Loading…")</p>
+        }
+        else if (_contentType == "application/pdf")
+        {
+            <iframe src="@_url" title="@Labels.Of(_selected)"></iframe>
+        }
+        else
+        {
+            <img src="@_url" alt="@Labels.Of(_selected)" />
+        }
+    </div>
+    @if (Current is { } current && _url is not null)
+    {
+        <div class="card-footer small text-muted d-flex justify-content-between">
+            <span>@current.FileName · @Labels.Size(current.SizeBytes) · uploaded @Labels.When(current.UploadedAt)</span>
+            <a href="@_url" target="_blank" rel="noopener">Open in new tab</a>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Guid DriverId { get; set; }
+    [Parameter, EditorRequired] public IReadOnlyList<AdminDocument> Documents { get; set; } = [];
+
+    private DocumentType _selected;
+    private string? _url;
+    private string? _contentType;
+    private string? _error;
+    private DateTimeOffset? _shownUploadedAt;
+
+    private AdminDocument? Current => Documents.FirstOrDefault(d => d.Type == _selected);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // First load, or the driver replaced the file we are showing.
+        if (_url is null || Current?.UploadedAt != _shownUploadedAt)
+        {
+            var first = Current ?? Documents.FirstOrDefault();
+            if (first is not null) await ShowAsync(first.Type);
+        }
+    }
+
+    private async Task ShowAsync(DocumentType type)
+    {
+        _selected = type;
+        _error = null;
+        await RevokeAsync();
+        StateHasChanged();
+        try
+        {
+            var file = await Api.DocumentAsync(DriverId, type);
+            using var stream = new MemoryStream(file.Bytes);
+            using var streamRef = new DotNetStreamReference(stream);
+            _url = await JS.InvokeAsync<string>("samasarathi.blobUrl", streamRef, file.ContentType);
+            _contentType = file.ContentType;
+            _shownUploadedAt = Current?.UploadedAt;
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task RevokeAsync()
+    {
+        if (_url is null) return;
+        var url = _url;
+        _url = null;
+        try
+        {
+            await JS.InvokeVoidAsync("samasarathi.revoke", url);
+        }
+        catch (JSDisconnectedException)
+        {
+            // Tab already closed: the browser frees blob URLs itself.
+        }
+    }
+
+    public async ValueTask DisposeAsync() => await RevokeAsync();
+}

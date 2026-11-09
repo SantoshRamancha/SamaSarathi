@@ -1,0 +1,38 @@
+# Secrets
+.env
+appsettings.*.local.json
+# Local API settings with the dev database password and JWT signing key. Copy appsettings.Development.example.json to this name.
+backend/src/Samasarathi.Api/appsettings.Development.json
+*.keystore
+*.jks
+google-services.json
+GoogleService-Info.plist
+
+# Uploaded driver documents (local dev storage)
+uploads/
+
+# .NET
+bin/
+obj/
+*.user
+.vs/
+TestResults/
+
+# Flutter / Dart
+.dart_tool/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+*.iml
+**/android/local.properties
+**/android/.gradle/
+**/ios/Pods/
+**/ios/.symlinks/
+
+# Editors / OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+Thumbs.db
+.DS_Store

@@ -1,0 +1,186 @@
+﻿@page "/"
+@inject ApiClient Api
+@inject NavigationManager Nav
+@inject TimeProvider Clock
+
+<PageTitle>Driver verification · Samasarathi Admin</PageTitle>
+
+<h1 class="h3 mb-3">Driver verification</h1>
+
+<ul class="nav nav-tabs mb-3">
+    @foreach (var (status, count) in Tabs())
+    {
+        <li class="nav-item">
+            <a class="nav-link @(!Searching && status == Status ? "active" : "")" href="@UrlFor(status, null)">
+                @Labels.Of(status)
+                @if (count is { } c)
+                {
+                    <span class="badge rounded-pill @(status == VerificationStatus.InReview && c > 0 ? "text-bg-primary" : "text-bg-light border") ms-1">@c</span>
+                }
+            </a>
+        </li>
+    }
+</ul>
+
+<form class="d-flex gap-2 mb-3 search" @onsubmit="SubmitSearch">
+    <input class="form-control" placeholder="Search name, phone or vehicle number" @bind="_searchText" />
+    <button class="btn btn-outline-primary">Search</button>
+    @if (Searching)
+    {
+        <a class="btn btn-link" href="@UrlFor(Status, null)">Clear</a>
+    }
+</form>
+
+@if (Searching)
+{
+    <p class="small text-muted">Results for “@Search” across all statuses.</p>
+}
+
+<ErrorAlert Message="@_error" OnRetry="LoadAsync" />
+
+@if (_drivers is null)
+{
+    @if (_error is null)
+    {
+        <p class="text-muted">Loading…</p>
+    }
+}
+else if (_drivers.Count == 0)
+{
+    <p class="text-muted">
+        @(Searching
+            ? "No drivers match your search."
+            : Status == VerificationStatus.InReview ? "No drivers waiting for review. 🎉" : "No drivers here.")
+    </p>
+}
+else
+{
+    <table class="table table-hover align-middle drivers">
+        <thead>
+            <tr>
+                <th>Driver</th>
+                @if (Searching)
+                {
+                    <th>Status</th>
+                }
+                <th>Vehicle</th>
+                <th class="text-end">Rate</th>
+                <th>@(Queue ? "Waiting" : "Submitted")</th>
+                <th>Checks</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var d in _drivers)
+            {
+                <tr role="button" @onclick="@(() => Nav.NavigateTo($"drivers/{d.Id}"))">
+                    <td>
+                        <a href="drivers/@d.Id" class="fw-semibold text-decoration-none">@d.FullName</a>
+                        <div class="small text-muted">@d.Phone</div>
+                    </td>
+                    @if (Searching)
+                    {
+                        <td><StatusBadge Status="d.Status" /></td>
+                    }
+                    <td>
+                        @if (d.VehicleNumber is not null)
+                        {
+                            <span class="font-monospace">@d.VehicleNumber</span>
+                            <div class="small text-muted">@d.VehicleType</div>
+                        }
+                        else
+                        {
+                            <span class="text-muted">—</span>
+                        }
+                    </td>
+                    <td class="text-end">@(d.RatePerKm > 0 ? $"₹{d.RatePerKm:0.##}/km" : "—")</td>
+                    <td>
+                        @if (Queue)
+                        {
+                            <span title="@Labels.When(d.SubmittedAt)">@Labels.Ago(d.SubmittedAt, Clock.GetUtcNow())</span>
+                        }
+                        else
+                        {
+                            @Labels.When(d.SubmittedAt)
+                        }
+                    </td>
+                    <td>
+                        @if (d.ChecksTotal == 0)
+                        {
+                            <span class="text-muted">—</span>
+                        }
+                        else
+                        {
+                            <span>@d.ChecksPassed / @d.ChecksTotal passed</span>
+                            @if (d.ChecksFailed > 0)
+                            {
+                                <span class="badge text-bg-danger ms-1">@d.ChecksFailed failed</span>
+                            }
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    @if (_drivers.Count >= 200)
+    {
+        <p class="small text-muted">Showing the first 200. Search to narrow down.</p>
+    }
+}
+
+@code {
+    // Query-string binding supports strings and numbers but not enums, so the status is parsed by hand.
+    [SupplyParameterFromQuery(Name = "status")] public string? StatusText { get; set; }
+    [SupplyParameterFromQuery] public string? Search { get; set; }
+
+    private VerificationStatus Status =>
+        Enum.TryParse<VerificationStatus>(StatusText, ignoreCase: true, out var s) ? s : VerificationStatus.InReview;
+
+    // A search looks across every status, so the tabs don't apply while searching.
+    private bool Searching => !string.IsNullOrWhiteSpace(Search);
+    private bool Queue => !Searching && Status == VerificationStatus.InReview;
+
+    private List<AdminDriverSummary>? _drivers;
+    private AdminDriverCounts? _counts;
+    private string? _searchText;
+    private string? _error;
+
+    // Tabs and search live in the URL (?status=Approved&search=ravi), so the back button and links work.
+    protected override Task OnParametersSetAsync()
+    {
+        _searchText = Search;
+        return LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _drivers = null;
+        try
+        {
+            var counts = Api.CountsAsync();
+            _drivers = await Api.DriversAsync(Searching ? null : Status, Search);
+            _counts = await counts;
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void SubmitSearch() => Nav.NavigateTo(UrlFor(Searching ? VerificationStatus.InReview : Status, _searchText));
+
+    private string UrlFor(VerificationStatus status, string? search) =>
+        Nav.GetUriWithQueryParameters(Nav.BaseUri, new Dictionary<string, object?>
+        {
+            ["status"] = status == VerificationStatus.InReview ? null : status.ToString(),
+            ["search"] = string.IsNullOrWhiteSpace(search) ? null : search.Trim(),
+        });
+
+    private IEnumerable<(VerificationStatus, int?)> Tabs()
+    {
+        yield return (VerificationStatus.InReview, _counts?.InReview);
+        yield return (VerificationStatus.Rejected, _counts?.Rejected);
+        yield return (VerificationStatus.Approved, _counts?.Approved);
+        yield return (VerificationStatus.Pending, _counts?.Pending);
+    }
+}
