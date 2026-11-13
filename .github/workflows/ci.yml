@@ -1,0 +1,69 @@
+name: CI
+
+# Builds and tests everything on every push to main and on every pull request,
+# so a broken change is caught before it is merged.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same branch cancels the older run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend and admin portal (.NET)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # The API needs a JWT key to start, but none of the tests start it: they only exercise the business rules.
+      # Building the Api and Admin projects makes sure the web layers still compile.
+      - name: Build API
+        run: dotnet build backend/src/Samasarathi.Api --configuration Release
+
+      - name: Build admin portal
+        run: dotnet build admin/Samasarathi.Admin --configuration Release
+
+      - name: Run backend tests
+        run: dotnet test backend/tests/Samasarathi.Tests --configuration Release
+
+  flutter:
+    name: Flutter (${{ matrix.package }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # Same order as the dependencies: both apps use the shared core package.
+        package: [mobile/packages/core, mobile/rider_app, mobile/driver_app]
+    defaults:
+      run:
+        working-directory: ${{ matrix.package }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.8
+          channel: stable
+          cache: true
+
+      - name: Get packages
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test

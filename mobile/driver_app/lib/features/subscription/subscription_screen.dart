@@ -44,6 +44,11 @@ String _money(double v) => '₹${v.toStringAsFixed(v.truncateToDouble() == v ? 0
   }
 }
 
+/// Amber "heads up" colours (background, text), explicit so a theme change can't turn a warning into a calm blue.
+(Color, Color) _warningColors(BuildContext context) => Theme.of(context).brightness == Brightness.dark
+    ? (const Color(0xFF5D4300), const Color(0xFFFFE0A3))
+    : (const Color(0xFFFFE8B3), const Color(0xFF4A3500));
+
 /// A card on the home screen that appears only when the subscription needs the driver's attention. Tap for details.
 class SubscriptionBanner extends ConsumerWidget {
   const SubscriptionBanner({super.key});
@@ -54,12 +59,17 @@ class SubscriptionBanner extends ConsumerWidget {
     final sub = ref.watch(subscriptionProvider).value;
     final notice = sub == null ? null : subscriptionNotice(sub);
     if (notice == null) return const SizedBox.shrink();
+    final (background, foreground) = notice.urgent ? (colors.errorContainer, colors.onErrorContainer) : _warningColors(context);
+    // Gentle notices have no next step in the text, so say what to do (online payment is not available yet).
+    final body = notice.urgent || (sub?.paymentsEnabled ?? false) ? notice.body : '${notice.body} Contact support to renew.';
     return Card(
-      color: notice.urgent ? colors.errorContainer : colors.tertiaryContainer,
+      color: background,
       child: ListTile(
+        iconColor: foreground,
+        textColor: foreground,
         leading: Icon(notice.urgent ? Icons.warning_amber_rounded : Icons.schedule),
         title: Text(notice.title),
-        subtitle: Text(notice.body),
+        subtitle: Text(body),
         trailing: const Icon(Icons.chevron_right),
         onTap: () => context.push('/subscription').then((_) => ref.invalidate(subscriptionProvider)),
       ),
@@ -85,13 +95,13 @@ class SubscriptionScreen extends ConsumerWidget {
             Center(child: Text(e is ApiException ? e.message : e.toString())),
             Center(child: TextButton(onPressed: () => ref.invalidate(subscriptionProvider), child: const Text('Try again'))),
           ]),
-          data: (s) => _content(context, s),
+          data: (s) => _content(context, ref, s),
         ),
       ),
     );
   }
 
-  Widget _content(BuildContext context, DriverSubscription s) {
+  Widget _content(BuildContext context, WidgetRef ref, DriverSubscription s) {
     final text = Theme.of(context).textTheme;
     final colors = Theme.of(context).colorScheme;
     final notice = subscriptionNotice(s);
@@ -114,15 +124,18 @@ class SubscriptionScreen extends ConsumerWidget {
       padding: const EdgeInsets.all(16),
       children: [
         Card(
-          color: s.canTakeRides ? colors.primaryContainer : colors.errorContainer,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [Icon(icon), const SizedBox(width: 8), Expanded(child: Text(headline, style: text.titleLarge))]),
-              const SizedBox(height: 8),
-              Text(detail),
-              if (notice != null && s.phase != SubscriptionPhase.active) ...[const SizedBox(height: 8), Text(notice.body)],
-            ]),
+          color: !s.canTakeRides ? colors.errorContainer : (s.enforced && s.expiringSoon) ? _warningColors(context).$1 : colors.primaryContainer,
+          child: DefaultTextStyle.merge(
+            style: TextStyle(color: (s.enforced && s.expiringSoon && s.canTakeRides) ? _warningColors(context).$2 : null),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [Icon(icon), const SizedBox(width: 8), Expanded(child: Text(headline, style: text.titleLarge))]),
+                const SizedBox(height: 8),
+                Text(detail),
+                if (notice != null && s.phase != SubscriptionPhase.active) ...[const SizedBox(height: 8), Text(notice.body)],
+              ]),
+            ),
           ),
         ),
         const SizedBox(height: 16),
@@ -137,9 +150,17 @@ class SubscriptionScreen extends ConsumerWidget {
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
-              child: Text(s.paymentsEnabled
-                  ? 'Renew from here.'
-                  : 'Online payment is coming soon. To renew now, contact Samasarathi support and we will activate your subscription.'),
+              child: s.paymentsEnabled
+                  ? const Text('Renew from here.')
+                  : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const Text('Online payment is coming soon. To renew now, contact Samasarathi support and we will activate your subscription.'),
+                      const SizedBox(height: 12),
+                      FilledButton.icon(
+                        icon: const Icon(Icons.support_agent),
+                        label: const Text('Contact support to renew'),
+                        onPressed: () => contactSupport(ref, context, topic: 'I would like to renew my ${s.planName} subscription.'),
+                      ),
+                    ]),
             ),
           ),
         ],

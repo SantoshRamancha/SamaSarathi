@@ -181,6 +181,7 @@ else
         yield return (VerificationStatus.InReview, _counts?.InReview);
         yield return (VerificationStatus.Rejected, _counts?.Rejected);
         yield return (VerificationStatus.Approved, _counts?.Approved);
+        yield return (VerificationStatus.Suspended, _counts?.Suspended);
         yield return (VerificationStatus.Pending, _counts?.Pending);
     }
 }

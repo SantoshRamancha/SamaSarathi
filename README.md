@@ -143,6 +143,9 @@ flutter test mobile/packages/core
 ```
 The two apps have their own small test folders (`cd mobile/driver_app && flutter test`, same for `rider_app`).
 
+GitHub Actions (`.github/workflows/ci.yml`) runs all of this on every push to `main` and every pull request: it builds the API and
+admin portal, runs the backend tests, and runs `flutter analyze` + `flutter test` for the core package and both apps.
+
 ## Routing, weather and fares
 
 Fare quotes use a real road route (OSRM) and the current rain at the pickup (Open-Meteo), both free and key-less for development.
@@ -159,6 +162,10 @@ Peak hour or rain switches the fare to *time-based* pricing (see `FareCalculator
 works (straight-line distance, dry weather) and says so. To change a provider, write another `IRouteService` / `IWeatherService` and
 change one line in `DependencyInjection.cs`. **Before launch:** OSRM's demo server and Open-Meteo's free tier are not for commercial
 use; switch to Google Routes (traffic-aware) / Ola Maps and a licensed weather provider.
+
+### Support contact
+
+The "Contact support" buttons in both apps (call, WhatsApp, email) read the `Support` section of `appsettings.json` (`Phone`, `WhatsApp`, `Email`, `Hours`), or environment variables such as `Support__WhatsApp`. Leave a value empty to hide it. These are public contact details, not secrets. Restart the API to change them; no app update is needed.
 
 ## Driver subscriptions
 

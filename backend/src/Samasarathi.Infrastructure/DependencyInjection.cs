@@ -38,6 +38,9 @@ public static class DependencyInjection
         var subscriptionOptions = config.GetSection("Subscription").Get<SubscriptionOptions>() ?? new SubscriptionOptions();
         services.AddSingleton(subscriptionOptions);
         services.AddSingleton<SubscriptionExpiryService>();
+
+        // Who riders and drivers can contact: the "Support" config section.
+        services.AddSingleton(config.GetSection("Support").Get<SupportOptions>() ?? new SupportOptions());
         services.AddHostedService(sp => sp.GetRequiredService<SubscriptionExpiryService>());
 
         // Destination search. To change provider, write another IPlaceSearch and register it here.

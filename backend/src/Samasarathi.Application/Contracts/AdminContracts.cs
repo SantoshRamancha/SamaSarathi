@@ -19,17 +19,26 @@ public sealed record AdminCheck(
     VerificationCheckType Type, CheckResult Result, string? Notes, string? CheckedBy,
     DateTimeOffset? CheckedAt, DateTimeOffset CreatedAt);
 
+/// <summary>One rating a rider gave this driver, shown to our team when deciding whether to suspend.</summary>
+public sealed record AdminDriverRating(int Stars, string? Comment, DateTimeOffset RatedAt);
+
 /// <param name="Checks">Checks for the current submission.</param>
 /// <param name="History">Checks from earlier submissions, newest first.</param>
+/// <param name="RatingAverage">Average stars from riders; null until the first rating.</param>
+/// <param name="RecentRatings">The latest ratings (up to 10), newest first.</param>
 public sealed record AdminDriverDetail(
     Guid Id, string FullName, string Phone, decimal RatePerKm, VerificationStatus Status,
     DateTimeOffset CreatedAt, DateTimeOffset? SubmittedAt, DateTimeOffset? ReviewedAt, string? ReviewedBy,
     string? RejectionReason, VehicleType? VehicleType, string? VehicleNumber, string? VehicleModel,
-    IReadOnlyList<AdminDocument> Documents, IReadOnlyList<AdminCheck> Checks, IReadOnlyList<AdminCheck> History);
+    IReadOnlyList<AdminDocument> Documents, IReadOnlyList<AdminCheck> Checks, IReadOnlyList<AdminCheck> History,
+    double? RatingAverage, int RatingCount, IReadOnlyList<AdminDriverRating> RecentRatings);
 
 public sealed record RecordCheckRequest(CheckResult Result, [StringLength(500)] string? Notes);
 
 public sealed record RejectRequest([Required, StringLength(500, MinimumLength = 5)] string Reason);
+
+/// <summary>The reason is shown to the driver, so it should say what they need to do.</summary>
+public sealed record SuspendRequest([Required, StringLength(500, MinimumLength = 5)] string Reason);
 
 // ---- Subscriptions ----
 

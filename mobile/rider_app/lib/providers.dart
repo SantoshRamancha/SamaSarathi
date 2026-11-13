@@ -28,6 +28,23 @@ class PickupNotifier extends Notifier<LatLng?> {
 
 final pickupProvider = NotifierProvider<PickupNotifier, LatLng?>(PickupNotifier.new);
 
+/// How to reach the support team (set on the server). Loaded when the rider taps a "Contact support" button.
+final supportProvider = FutureProvider.autoDispose<SupportInfo>((ref) => ref.watch(apiClientProvider).support());
+
+/// Opens the contact sheet. The WhatsApp chat and email start with who the rider is, plus [topic], so the team can help at once.
+Future<void> contactSupport(WidgetRef ref, BuildContext context, {String? topic}) async {
+  final me = ref.read(riderMeProvider).value;
+  final message = [
+    'Hi Samasarathi support, I am ${me?.fullName ?? 'a rider'}${me == null ? '' : ' (${me.phone})'}, a rider.',
+    ?topic,
+  ].join(' ');
+  SupportInfo? info;
+  try {
+    info = await ref.refresh(supportProvider.future);
+  } catch (_) {}
+  if (context.mounted) await showSupportSheet(context, info: info, message: message);
+}
+
 Future<void> logout(WidgetRef ref, BuildContext context) async {
   await ref.read(sessionStoreProvider).clear();
   ref.read(apiClientProvider).token = null;

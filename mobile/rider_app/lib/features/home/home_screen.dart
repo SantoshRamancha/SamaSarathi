@@ -95,6 +95,16 @@ class HomeScreen extends ConsumerWidget {
                   onTap: () => context.push('/fare'),
                 ),
               ),
+              const SizedBox(height: 8),
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.support_agent),
+                  title: const Text('Contact support'),
+                  subtitle: const Text('Questions, fare issues or lost items'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => contactSupport(ref, context),
+                ),
+              ),
               const SizedBox(height: 24),
               Text('Why Samasarathi?', style: text.titleMedium),
               const ListTile(

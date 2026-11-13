@@ -216,7 +216,8 @@ To test expiry quickly, set `Subscription__TrialDays` to `1` and `Subscription__
 - [ ] **L2** Reload / reopen the app: still one trial line (a driver never gets a second trial).
 - [ ] **L3** Admin portal → **Subscriptions**: the driver appears under *Active* and *On free trial*. The grey line at the top shows the plan numbers in force.
 - [ ] **L4** **Add days** on that driver with no reason → "Add a short reason." With 10 days + a reason → green "Added 10 days…", *Valid until* moves out by 10 days, *Last period* shows *Granted* with your reason. The driver app history shows "Added by Samasarathi" with the reason.
-- [ ] **L5** Set `Subscription__TrialDays=1`, `GraceDays=3`, approve another driver, wait a day (or move the dates in the database so the period ended yesterday): the driver app shows an orange/red banner "Subscription ended: renew now … keep working until …". **Go online** still works (grace).
+- [ ] **L4b** Driver with 1–3 days left (trial or paid): the home banner is **amber** (not blue) with "Your free trial is ending", the days left and "Contact support to renew." Tap it → the status card on the Subscription screen is amber too. Check light and dark mode: the text stays readable. Grace/expired/none banners stay **red**.
+- [ ] **L5** Set `Subscription__TrialDays=1`, `GraceDays=3`, approve another driver, wait a day (or move the dates in the database so the period ended yesterday): the driver app shows a red banner "Subscription ended: renew now … keep working until …". **Go online** still works (grace).
 - [ ] **L6** Move the period so it ended 4+ days ago: banner "Subscription ended", the button says **Renew your subscription to go online** and is disabled. API check: `POST /api/drivers/me/online` → **409** "Your subscription ended on …".
 - [ ] **L7** A driver who is online when the subscription runs out is taken offline within ~10 minutes (the background job) or on their next location update (409), and disappears from the rider's map. A driver in the middle of a ride is **not** cut off until the ride ends.
 - [ ] **L8** Rider app: a driver with an ended subscription is not listed nearby, and `POST /api/rides` for them → **409** "This driver isn't available any more".
@@ -226,6 +227,34 @@ To test expiry quickly, set `Subscription__TrialDays` to `1` and `Subscription__
 - [ ] **L12** `Subscription__TrialDays=0`, approve a driver: no trial; the driver app says "No subscription yet. Contact support…", Go online is refused (409), the admin page lists them under **Not started** until you add days.
 - [ ] **L14** Mid-ride expiry: with a driver in a ride that is already *accepted* or *in progress*, move their subscription end into the past (past grace). The trip keeps working (arrived, start, **Complete trip**); about 5 s after completing they are taken offline. Then, for a ride still waiting for an answer (**requested**), expire the subscription and tap **Accept** → red message "Your subscription ended on … Renew it to accept rides." (409); **Decline** still works.
 - [ ] **L13** Change `Subscription__MonthlyPrice` (e.g. `599`) and restart the API: the driver app shows ₹599 with no app update.
+
+## M. Driver ratings for riders, and suspending drivers
+
+- [ ] **M1** Rider app, **Book a ride**: each driver row has a small chip. A driver nobody has rated shows "☆ New driver · Verified"; with 1-4 ratings it shows "★ 4.5 · 2 ratings" (or "1 rating"); with 5 or more it shows "★ 4.8 (23)". Tap the chip: a short dialog explains it (new and verified / only a few ratings so it may change / average of N ratings). Book a driver: the tracking card shows the same chip next to their name. (To test the rated cases, complete and rate rides for one driver.)
+- [ ] **M2** Admin portal → open that driver: the left card has a **Rating** line (stars, average, count) and a **Recent ratings from riders** list with the comments.
+- [ ] **M3** Open an *Approved* driver → **Suspend driver** with no reason → error asking for a longer reason. With a real reason → confirm → red "Suspended" banner with your reason; the driver now appears under the new **Suspended** tab on the drivers list.
+- [ ] **M4** Driver app (suspended driver): pull to refresh → red card "Suspended" with your message and "Contact Samasarathi support…". The map and **Go online** are gone. API check: `POST /api/drivers/me/online` → **409** "Your account is suspended. <your reason> Contact support."
+- [ ] **M5** Suspend a driver who is **online and idle**: they disappear from the rider's map right away (no waiting for the 5 s update or the 10 min job).
+- [ ] **M6** Suspend a driver who is **in a ride** (accepted or in progress): the trip keeps working and can be completed; within about 5 s after it ends they are taken offline with "Your account was suspended…". A *requested* ride they have not answered cannot be accepted ("Your account is suspended…").
+- [ ] **M7** Suspended drivers are not listed for riders and `POST /api/rides` for them → **409** "This driver isn't available any more".
+- [ ] **M8** Admin: **Reinstate driver** → confirm → status Approved again, green banner. The driver app (pull to refresh) shows the map; **Go online** works; their subscription and ratings are unchanged.
+- [ ] **M9** Only approved drivers can be suspended and only suspended ones reinstated: a driver *In review* has neither button; `POST /api/admin/drivers/{id}/suspend` on one → **400**.
+
+## N. Contacting support
+
+Setup: in `backend/src/Samasarathi.Api/appsettings.Development.json` add (restart the API; placeholders are fine for testing):
+`"Support": { "Phone": "+910000000000", "WhatsApp": "+910000000000", "Email": "support@example.com", "Hours": "Mon-Sat, 9 am to 7 pm" }`
+
+- [ ] **N1** `GET /api/support` (no login needed) returns the phone, whatsApp, email and hours you configured.
+- [ ] **N2** Driver app (approved): the headset icon in the top bar opens a sheet with **Call us**, **WhatsApp**, **Email** and the hours.
+- [ ] **N3** Tap **WhatsApp**: the WhatsApp chat opens with "Hi Samasarathi support, I am <name> (<phone>), a driver." already typed. **Email** opens a draft with the same text; **Call us** opens the dialer with the number.
+- [ ] **N4** Driver with a subscription ending, expired or in grace → Subscription screen → **Contact support to renew** opens the same sheet, and the message ends with "I would like to renew my Monthly subscription."
+- [ ] **N5** Suspended driver: the red card has a **Contact support** button (message mentions the suspension).
+- [ ] **N6** Rider app: home screen → **Contact support** card opens the sheet. During or after a ride, **Need help with this ride?** opens it with the driver's name, vehicle number and ride id in the message.
+- [ ] **N7** Remove one value (say the email) and restart the API: that row disappears from the sheet. Remove all three: the sheet says "Support contact details are not available yet". Stop the API: it says "We could not load our contact details".
+- [ ] **N8** (real phone) On a device with no WhatsApp installed, tapping WhatsApp shows "Could not open WhatsApp on this phone" (the app does not crash).
+
+---
 
 ---
 

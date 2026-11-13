@@ -73,6 +73,7 @@ public class DriverRidesController(
         Respond(id, (r, d) =>
         {
             var now = clock.GetUtcNow();
+            d.EnsureNotSuspended();
             d.EnsureSubscribed(now, subscriptionOptions, action: "accept rides");
             r.Accept(d.Id, now);
         }, ct);

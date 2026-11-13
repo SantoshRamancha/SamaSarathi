@@ -108,6 +108,45 @@ public class Driver
         ReviewedBy = reviewer;
     }
 
+    /// <summary>
+    /// Stops an approved driver from working (for example after complaints or bad ratings). They can no longer go online,
+    /// are hidden from riders and cannot be booked. The reason is shown to the driver in <see cref="RejectionReason"/>, the
+    /// same field that carries our message when a registration is sent back.
+    /// Going offline is left to the caller: a driver with a ride under way is not cut off until it ends.
+    /// </summary>
+    public void Suspend(string reason, string reviewer, DateTimeOffset now)
+    {
+        if (VerificationStatus != VerificationStatus.Approved)
+            throw new InvalidOperationException($"Only approved drivers can be suspended; this driver is {VerificationStatus}.");
+        if (string.IsNullOrWhiteSpace(reason))
+            throw new InvalidOperationException("Tell the driver why, so they know what to do.");
+
+        VerificationStatus = VerificationStatus.Suspended;
+        RejectionReason = reason.Trim();
+        ReviewedAt = now;
+        ReviewedBy = reviewer;
+    }
+
+    /// <summary>Throws with our message to the driver when the account is suspended.</summary>
+    public void EnsureNotSuspended()
+    {
+        if (VerificationStatus == VerificationStatus.Suspended)
+            throw new InvalidOperationException(
+                $"Your account is suspended.{(string.IsNullOrWhiteSpace(RejectionReason) ? "" : $" {RejectionReason}")} Contact support.");
+    }
+
+    /// <summary>Lets a suspended driver work again. Their subscription and ratings are untouched.</summary>
+    public void Reinstate(string reviewer, DateTimeOffset now)
+    {
+        if (VerificationStatus != VerificationStatus.Suspended)
+            throw new InvalidOperationException($"Only suspended drivers can be reinstated; this driver is {VerificationStatus}.");
+
+        VerificationStatus = VerificationStatus.Approved;
+        RejectionReason = null;
+        ReviewedAt = now;
+        ReviewedBy = reviewer;
+    }
+
     /// <summary>Sends the registration back to the driver, who can fix it and submit again.</summary>
     public void Reject(string reason, string reviewer, DateTimeOffset now)
     {
@@ -127,6 +166,7 @@ public class Driver
     /// </summary>
     public void GoOnline(double latitude, double longitude, DateTimeOffset now)
     {
+        EnsureNotSuspended();
         if (VerificationStatus != VerificationStatus.Approved)
             throw new InvalidOperationException("Only verified drivers can go online.");
 

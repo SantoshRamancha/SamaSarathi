@@ -173,6 +173,14 @@ class _RideTrackingScreenState extends ConsumerState<RideTrackingScreen> {
                     onPressed: _busy ? null : _cancel,
                     child: Text(_busy ? 'Please wait…' : 'Cancel ride'),
                   ),
+                // Help with a ride that has a driver: a problem on the way, or a dispute about the fare afterwards.
+                if (ride.driver != null && ride.status != RideStatus.declined && ride.status != RideStatus.expired)
+                  TextButton.icon(
+                    icon: const Icon(Icons.support_agent),
+                    label: const Text('Need help with this ride?'),
+                    onPressed: () => contactSupport(ref, context,
+                        topic: 'I need help with my ride with ${ride.driver!.name} (${ride.driver!.registrationNumber}), ride id ${ride.id}.'),
+                  ),
                 // A request that didn't work out: go straight back to the driver list for the same trip.
                 if (!ride.isActive && ride.status != RideStatus.completed) ...[
                   FilledButton(onPressed: _chooseAnother, child: const Text('Choose another driver')),
@@ -228,7 +236,11 @@ class _RideTrackingScreenState extends ConsumerState<RideTrackingScreen> {
               ]),
               const SizedBox(height: 8),
               if (driver != null) ...[
-                Text(driver.name, style: text.titleLarge),
+                Row(children: [
+                  Flexible(child: Text(driver.name, style: text.titleLarge)),
+                  const SizedBox(width: 8),
+                  DriverTrustBadge(average: driver.ratingAverage, count: driver.ratingCount),
+                ]),
                 Text('${driver.vehicleType}${driver.model == null ? '' : ' · ${driver.model}'} · ${driver.registrationNumber}'),
                 if (driver.phone != null) SelectableText('Phone: ${driver.phone}'),
               ],

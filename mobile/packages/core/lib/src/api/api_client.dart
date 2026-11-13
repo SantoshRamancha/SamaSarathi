@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 
 import '../auth/auth_models.dart';
 import '../models/fare_quote.dart';
+import '../models/support_info.dart';
 import 'api_config.dart';
 import 'api_exception.dart';
 
@@ -55,5 +56,11 @@ class ApiClient {
           data: request.toJson(),
         );
         return FareQuote.fromJson(res.data!);
+      });
+
+  /// Phone, WhatsApp and email of the support team. Needs no login.
+  Future<SupportInfo> support() => send(() async {
+        final res = await dio.get<Map<String, dynamic>>('/api/support');
+        return SupportInfo.fromJson(res.data!);
       });
 }

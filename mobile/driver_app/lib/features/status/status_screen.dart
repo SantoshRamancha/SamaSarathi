@@ -18,6 +18,7 @@ class StatusScreen extends ConsumerWidget {
     final text = Theme.of(context).textTheme;
     final colors = Theme.of(context).colorScheme;
     final approved = driver.status == VerificationStatus.approved;
+    final suspended = driver.status == VerificationStatus.suspended;
 
     return Scaffold(
       appBar: AppBar(
@@ -30,6 +31,7 @@ class StatusScreen extends ConsumerWidget {
               icon: const Icon(Icons.workspace_premium_outlined),
               onPressed: () => context.push('/subscription').then((_) => ref.invalidate(subscriptionProvider)),
             ),
+          IconButton(tooltip: 'Contact support', icon: const Icon(Icons.support_agent), onPressed: () => contactSupport(ref, context)),
           // Pull-to-refresh needs a touch screen; this works with a mouse too.
           IconButton(
             tooltip: 'Refresh',
@@ -49,22 +51,42 @@ class StatusScreen extends ConsumerWidget {
             Text('Hi ${driver.fullName.split(' ').first}', style: text.headlineSmall),
             const SizedBox(height: 16),
             Card(
-              color: approved ? colors.primaryContainer : colors.secondaryContainer,
+              color: approved
+                  ? colors.primaryContainer
+                  : suspended
+                      ? colors.errorContainer
+                      : colors.secondaryContainer,
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(children: [
-                      Icon(approved ? Icons.verified : Icons.hourglass_top),
+                      Icon(approved
+                          ? Icons.verified
+                          : suspended
+                              ? Icons.block
+                              : Icons.hourglass_top),
                       const SizedBox(width: 8),
                       Text(driver.status.label, style: text.titleLarge),
                     ]),
                     const SizedBox(height: 8),
                     Text(approved
                         ? 'You are verified. You can go online and start taking rides.'
-                        : 'Our team is checking your documents and background. '
-                            'This usually takes 2–3 working days. Pull down or tap the refresh icon to check for updates.'),
+                        : suspended
+                            ? 'Your account has been suspended, so you cannot go online or take rides for now.'
+                                '${driver.rejectionReason == null ? '' : '\n\nMessage from our team: ${driver.rejectionReason}'}'
+                                '\n\nContact Samasarathi support to find out what happens next.'
+                            : 'Our team is checking your documents and background. '
+                                'This usually takes 2–3 working days. Pull down or tap the refresh icon to check for updates.'),
+                    if (suspended) ...[
+                      const SizedBox(height: 12),
+                      FilledButton.icon(
+                        icon: const Icon(Icons.support_agent),
+                        label: const Text('Contact support'),
+                        onPressed: () => contactSupport(ref, context, topic: 'My account has been suspended and I would like to know what happens next.'),
+                      ),
+                    ],
                   ],
                 ),
               ),

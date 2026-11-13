@@ -29,6 +29,13 @@
     {
         <div class="alert alert-success">Approved by @d.ReviewedBy on @Labels.When(d.ReviewedAt).</div>
     }
+    else if (d.Status == VerificationStatus.Suspended)
+    {
+        <div class="alert alert-danger">
+            <strong>Suspended:</strong> @d.RejectionReason
+            <div class="small">by @d.ReviewedBy on @Labels.When(d.ReviewedAt). The driver cannot go online or be booked.</div>
+        </div>
+    }
     else if (d.Status == VerificationStatus.Pending)
     {
         <div class="alert alert-secondary">This driver hasn't submitted their registration yet.</div>
@@ -53,6 +60,18 @@
                             }
                         </dd>
                         <dt class="col-5">Rate</dt><dd class="col-7">@(d.RatePerKm > 0 ? $"₹{d.RatePerKm:0.##} / km" : "—")</dd>
+                        <dt class="col-5">Rating</dt>
+                        <dd class="col-7">
+                            @if (d.RatingAverage is { } avg)
+                            {
+                                <span class="text-warning">@Labels.Stars((int)Math.Round(avg))</span>
+                                <span>@avg.ToString("0.0") (@d.RatingCount)</span>
+                            }
+                            else
+                            {
+                                <span class="text-muted">No ratings yet</span>
+                            }
+                        </dd>
                         <dt class="col-5">Registered</dt><dd class="col-7">@Labels.When(d.CreatedAt)</dd>
                         <dt class="col-5">Submitted</dt><dd class="col-7">@Labels.When(d.SubmittedAt)</dd>
                     </dl>
@@ -145,6 +164,49 @@
         </div>
     }
 
+    @if (d.Status is VerificationStatus.Approved or VerificationStatus.Suspended)
+    {
+        <div class="card mb-4 @(d.Status == VerificationStatus.Suspended ? "border-success" : "border-danger")">
+            <div class="card-body">
+                @if (d.Status == VerificationStatus.Approved)
+                {
+                    <h3 class="h6">Suspend driver</h3>
+                    <p class="small text-muted">
+                        Use after complaints or consistently low ratings. The driver is taken offline (after any ride in progress),
+                        can't go online or be booked, and sees your message in their app. You can reinstate them later.
+                    </p>
+                    <textarea class="form-control mb-2" rows="3" maxlength="500" @bind="_suspendReason"
+                              placeholder="What should the driver know? They will see this message."></textarea>
+                    <button class="btn btn-danger" disabled="@_busy" @onclick="SuspendAsync">Suspend driver</button>
+                }
+                else
+                {
+                    <h3 class="h6">Reinstate driver</h3>
+                    <p class="small text-muted">The driver can go online and take rides again. Their subscription and ratings are unchanged.</p>
+                    <button class="btn btn-success" disabled="@_busy" @onclick="ReinstateAsync">Reinstate driver</button>
+                }
+            </div>
+        </div>
+    }
+
+    @if (d.RecentRatings.Count > 0)
+    {
+        <h2 class="h5 mt-4">Recent ratings from riders</h2>
+        <ul class="list-group mb-4">
+            @foreach (var r in d.RecentRatings)
+            {
+                <li class="list-group-item">
+                    <span class="text-warning">@Labels.Stars(r.Stars)</span>
+                    <span class="small text-muted ms-2">@Labels.When(r.RatedAt)</span>
+                    @if (!string.IsNullOrWhiteSpace(r.Comment))
+                    {
+                        <div class="small">“@r.Comment”</div>
+                    }
+                </li>
+            }
+        </ul>
+    }
+
     @if (d.History.Count > 0)
     {
         <h2 class="h6 mt-4 text-muted">Earlier submissions</h2>
@@ -176,6 +238,7 @@ else if (_loadError is null)
     private AdminDriverDetail? _driver;
     private readonly Dictionary<VerificationCheckType, string?> _notes = [];
     private string? _reason;
+    private string? _suspendReason;
     private bool _busy;
     private string? _loadError;
     private string? _actionError;
@@ -215,6 +278,21 @@ else if (_loadError is null)
     }
 
     private Task RejectAsync() => ActAsync(() => Api.RejectAsync(Id, _reason ?? ""));
+
+    private async Task SuspendAsync()
+    {
+        if (await JS.InvokeAsync<bool>("confirm", $"Suspend {_driver!.FullName}? They will be taken offline and can't take rides until reinstated."))
+        {
+            await ActAsync(() => Api.SuspendAsync(Id, _suspendReason ?? ""));
+            if (_actionError is null) _suspendReason = null;
+        }
+    }
+
+    private async Task ReinstateAsync()
+    {
+        if (await JS.InvokeAsync<bool>("confirm", $"Reinstate {_driver!.FullName}? They will be able to take rides again."))
+            await ActAsync(() => Api.ReinstateAsync(Id));
+    }
 
     private async Task ActAsync(Func<Task<AdminDriverDetail>> action)
     {

@@ -39,6 +39,96 @@ class RatingBadge extends StatelessWidget {
   }
 }
 
+/// What a rider sees about a driver's reputation, with a plain explanation one tap away.
+///
+/// - Nobody has rated them yet: "☆ New driver · Verified". Every driver passes our background checks before taking
+///   rides, so "new" is explained as a trust signal rather than left as a bare word.
+/// - A few ratings (fewer than [minRatingsForAverage]): "★ 4.5 · 2 ratings". One 5-star rating must not look like
+///   a long track record, so the count is spelled out.
+/// - Enough ratings: "★ 4.8 (23)".
+class DriverTrustBadge extends StatelessWidget {
+  const DriverTrustBadge({
+    super.key,
+    required this.average,
+    required this.count,
+  });
+
+  /// Ratings needed before the average is shown without a "few ratings" caution.
+  static const minRatingsForAverage = 5;
+
+  final double? average;
+  final int count;
+
+  bool get _unrated => average == null || count == 0;
+
+  /// The text on the chip.
+  String get label => _unrated
+      ? 'New driver'
+      : count < minRatingsForAverage
+      ? '${average!.toStringAsFixed(1)} · $count rating${count == 1 ? '' : 's'}'
+      : '${average!.toStringAsFixed(1)} ($count)';
+
+  /// What tapping the chip explains.
+  String get explanation => _unrated
+      ? 'New to Samasarathi and not rated yet. Every driver passes our background checks before taking rides.'
+      : count < minRatingsForAverage
+      ? 'Based on only $count rating${count == 1 ? '' : 's'} so far, so this score may change as more riders rate.'
+      : 'Average of $count ratings from riders after their trips.';
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final style = Theme.of(context).textTheme.bodySmall;
+    return Semantics(
+      button: true,
+      label: _unrated
+          ? 'New driver, verified. Tap for details.'
+          : 'Rated $label. Tap for details.',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => showDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text(_unrated ? 'New driver' : 'Driver rating'),
+            content: Text(explanation),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          decoration: BoxDecoration(
+            border: Border.all(color: colors.outlineVariant),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                _unrated ? Icons.star_border : Icons.star,
+                size: 14,
+                color: Colors.amber.shade700,
+              ),
+              const SizedBox(width: 2),
+              Text(label, style: style),
+              if (_unrated) ...[
+                Text(' · ', style: style),
+                Icon(Icons.verified_user, size: 14, color: colors.primary),
+                const SizedBox(width: 2),
+                Text('Verified', style: style),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// What the person typed and tapped in a [RatingForm].
 class RatingResult {
   const RatingResult(this.stars, this.comment);

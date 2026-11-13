@@ -18,6 +18,23 @@ final driverMeProvider = FutureProvider.autoDispose<DriverMe?>((ref) => ref.watc
 /// The driver's subscription. Call ref.invalidate(subscriptionProvider) to reload.
 final subscriptionProvider = FutureProvider.autoDispose<DriverSubscription>((ref) => ref.watch(driverApiProvider).subscription());
 
+/// How to reach the support team (set on the server). Loaded when the driver taps a "Contact support" button.
+final supportProvider = FutureProvider.autoDispose<SupportInfo>((ref) => ref.watch(apiClientProvider).support());
+
+/// Opens the contact sheet. The WhatsApp chat and email start with who the driver is, plus [topic], so the team can help at once.
+Future<void> contactSupport(WidgetRef ref, BuildContext context, {String? topic}) async {
+  final me = ref.read(driverMeProvider).value;
+  final message = [
+    'Hi Samasarathi support, I am ${me?.fullName ?? 'a driver'}${me == null ? '' : ' (${me.phone})'}, a driver.',
+    ?topic,
+  ].join(' ');
+  SupportInfo? info;
+  try {
+    info = await ref.refresh(supportProvider.future);
+  } catch (_) {}
+  if (context.mounted) await showSupportSheet(context, info: info, message: message);
+}
+
 Future<void> logout(WidgetRef ref, BuildContext context) async {
   // Don't leave a logged-out driver showing on riders' maps. Best effort: expiry removes them within a minute anyway.
   try {

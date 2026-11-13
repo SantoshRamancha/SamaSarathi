@@ -13,7 +13,8 @@ namespace Samasarathi.Api.Controllers;
 [ApiController]
 [Route("api/admin/drivers")]
 [Authorize(Roles = AppRoles.Admin)]
-public class AdminDriversController(AppDbContext db, IFileStorage files, TimeProvider clock) : ControllerBase
+public class AdminDriversController(
+    AppDbContext db, IFileStorage files, IDriverLocationStore locations, TimeProvider clock) : ControllerBase
 {
     private const int MaxResults = 200;
 
@@ -73,7 +74,7 @@ public class AdminDriversController(AppDbContext db, IFileStorage files, TimePro
 
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<AdminDriverDetail>> Get(Guid id, CancellationToken ct) =>
-        await Load(id, ct) is { } driver ? Detail(driver) : NotFound();
+        await Load(id, ct) is { } driver ? await DetailAsync(driver, ct) : NotFound();
 
     /// <summary>The uploaded file itself, shown inline in the portal.</summary>
     [HttpGet("{id:guid}/documents/{type}")]
@@ -104,6 +105,35 @@ public class AdminDriversController(AppDbContext db, IFileStorage files, TimePro
     public Task<ActionResult<AdminDriverDetail>> Reject(Guid id, RejectRequest req, CancellationToken ct) =>
         Review(id, d => d.Reject(req.Reason, Reviewer, clock.GetUtcNow()), ct);
 
+    /// <summary>
+    /// Stops an approved driver from working. They can't go online or be booked from now on, and the reason is shown in
+    /// their app. A driver who is online is taken offline right away, unless a ride is under way: they finish it first
+    /// and are taken offline on their next location update.
+    /// </summary>
+    [HttpPost("{id:guid}/suspend")]
+    public async Task<ActionResult<AdminDriverDetail>> Suspend(Guid id, SuspendRequest req, CancellationToken ct)
+    {
+        var result = await Review(id, d => d.Suspend(req.Reason, Reviewer, clock.GetUtcNow()), ct);
+        if (result.Value is not null) await TakeOfflineIfIdleAsync(id, ct);
+        return result;
+    }
+
+    /// <summary>Lets a suspended driver work again.</summary>
+    [HttpPost("{id:guid}/reinstate")]
+    public Task<ActionResult<AdminDriverDetail>> Reinstate(Guid id, CancellationToken ct) =>
+        Review(id, d => d.Reinstate(Reviewer, clock.GetUtcNow()), ct);
+
+    private async Task TakeOfflineIfIdleAsync(Guid id, CancellationToken ct)
+    {
+        var driver = await db.Drivers.FirstOrDefaultAsync(d => d.Id == id, ct);
+        if (driver is not { IsOnline: true }) return;
+        if (await db.Rides.AnyAsync(r => r.DriverId == id && Ride.ActiveStatuses.Contains(r.Status), ct)) return;
+
+        driver.GoOffline();
+        await db.SaveChangesAsync(ct);
+        await locations.RemoveAsync(id, ct);
+    }
+
     /// <summary>Loads the driver, applies one review rule from the Domain, and saves.</summary>
     private async Task<ActionResult<AdminDriverDetail>> Review(Guid id, Action<Driver> action, CancellationToken ct)
     {
@@ -118,7 +148,7 @@ public class AdminDriversController(AppDbContext db, IFileStorage files, TimePro
         }
 
         await db.SaveChangesAsync(ct);
-        return Detail(driver);
+        return await DetailAsync(driver, ct);
     }
 
     private Task<Driver?> Load(Guid id, CancellationToken ct) =>
@@ -129,7 +159,19 @@ public class AdminDriversController(AppDbContext db, IFileStorage files, TimePro
             .AsSplitQuery()
             .FirstOrDefaultAsync(d => d.Id == id, ct);
 
-    private static AdminDriverDetail Detail(Driver d)
+    private async Task<AdminDriverDetail> DetailAsync(Driver d, CancellationToken ct)
+    {
+        var rating = await RatingQueries.ForDriverAsync(db, d.Id, ct);
+        var recent = await db.Rides
+            .Where(r => r.DriverId == d.Id && r.RatingForDriver != null)
+            .OrderByDescending(r => r.CompletedAt)
+            .Take(10)
+            .Select(r => new AdminDriverRating(r.RatingForDriver!.Value, r.CommentForDriver, r.CompletedAt ?? r.RequestedAt))
+            .ToListAsync(ct);
+        return Detail(d, rating, recent);
+    }
+
+    private static AdminDriverDetail Detail(Driver d, RatingSummaryDto rating, IReadOnlyList<AdminDriverRating> recent)
     {
         var current = d.CurrentChecks();
         return new AdminDriverDetail(
@@ -139,7 +181,8 @@ public class AdminDriversController(AppDbContext db, IFileStorage files, TimePro
             d.Documents.OrderBy(x => x.Type)
                 .Select(x => new AdminDocument(x.Type, x.OriginalFileName, x.ContentType, x.SizeBytes, x.UploadedAt)).ToList(),
             current.Select(ToDto).ToList(),
-            d.VerificationChecks.Except(current).OrderByDescending(c => c.CreatedAt).ThenBy(c => c.Type).Select(ToDto).ToList());
+            d.VerificationChecks.Except(current).OrderByDescending(c => c.CreatedAt).ThenBy(c => c.Type).Select(ToDto).ToList(),
+            rating.Average, rating.Count, recent);
     }
 
     private static AdminCheck ToDto(VerificationCheck c) =>

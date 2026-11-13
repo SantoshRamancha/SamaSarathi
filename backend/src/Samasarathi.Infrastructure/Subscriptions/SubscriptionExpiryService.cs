@@ -11,7 +11,7 @@ namespace Samasarathi.Infrastructure.Subscriptions;
 
 /// <summary>
 /// Runs in the background while the API is up. Every few minutes it (1) marks periods that have ended as Expired and
-/// (2) takes drivers whose subscription (and grace period) has run out offline, so riders stop seeing them.
+/// (2) takes drivers whose subscription (and grace period) has run out, or who were suspended, offline, so riders stop seeing them.
 /// A driver in the middle of a ride is left alone and is taken offline once the ride is over.
 /// </summary>
 public sealed class SubscriptionExpiryService(
@@ -20,8 +20,7 @@ public sealed class SubscriptionExpiryService(
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (!options.Enabled) return;
-
+        // Runs even with subscriptions switched off: it also takes suspended drivers offline.
         using var timer = new PeriodicTimer(TimeSpan.FromMinutes(Math.Max(1, options.ExpiryCheckMinutes)));
         do
         {

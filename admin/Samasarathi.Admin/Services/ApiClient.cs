@@ -63,6 +63,12 @@ public sealed class ApiClient(HttpClient http, AdminSession session, NavigationM
     public Task<AdminDriverDetail> RejectAsync(Guid id, string reason) =>
         ReadAsync<AdminDriverDetail>(Authorized(HttpMethod.Post, $"api/admin/drivers/{id}/reject", new RejectRequest(reason)));
 
+    public Task<AdminDriverDetail> SuspendAsync(Guid id, string reason) =>
+        ReadAsync<AdminDriverDetail>(Authorized(HttpMethod.Post, $"api/admin/drivers/{id}/suspend", new SuspendRequest(reason)));
+
+    public Task<AdminDriverDetail> ReinstateAsync(Guid id) =>
+        ReadAsync<AdminDriverDetail>(Authorized(HttpMethod.Post, $"api/admin/drivers/{id}/reinstate"));
+
     public Task<AdminSubscriptionCounts> SubscriptionCountsAsync() => GetAsync<AdminSubscriptionCounts>("api/admin/subscriptions/counts");
 
     public Task<AdminSubscriptionSettings> SubscriptionSettingsAsync() =>

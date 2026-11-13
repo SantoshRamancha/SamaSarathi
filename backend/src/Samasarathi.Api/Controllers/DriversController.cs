@@ -193,6 +193,7 @@ public class DriversController(
         return await Locate(d =>
         {
             var now = clock.GetUtcNow();
+            d.EnsureNotSuspended(); // say "suspended" before talking about the subscription
             d.EnsureSubscribed(now, subscriptionOptions);
             d.GoOnline(req.Latitude, req.Longitude, now);
         }, ct);
@@ -200,19 +201,24 @@ public class DriversController(
 
     /// <summary>
     /// Called every few seconds while online. If it stops, the driver drops off riders' maps after a minute.
-    /// A driver whose subscription has run out is taken offline here too (unless a ride is under way: they finish it first).
+    /// A driver whose subscription has run out, or who has been suspended, is taken offline here too
+    /// (unless a ride is under way: they finish it first).
     /// </summary>
     [HttpPut("location")]
     public async Task<ActionResult<DriverMeResponse>> UpdateLocation(LocationRequest req, CancellationToken ct)
     {
         if (await Load(ct) is { IsOnline: true } driver
-            && !driver.SubscriptionAt(clock.GetUtcNow(), subscriptionOptions).CanTakeRides
+            && !driver.CanAcceptRides(clock.GetUtcNow(), subscriptionOptions)
             && !await db.Rides.AnyAsync(r => r.DriverId == driver.Id && Ride.ActiveStatuses.Contains(r.Status), ct))
         {
             driver.GoOffline();
             await db.SaveChangesAsync(ct);
             await locations.RemoveAsync(driver.Id, ct);
-            return Problem(detail: "Your subscription has ended, so you were taken offline. Renew it to go online.", statusCode: 409);
+            return Problem(
+                detail: driver.VerificationStatus == VerificationStatus.Suspended
+                    ? $"Your account was suspended, so you were taken offline.{(string.IsNullOrWhiteSpace(driver.RejectionReason) ? "" : $" {driver.RejectionReason}")}"
+                    : "Your subscription has ended, so you were taken offline. Renew it to go online.",
+                statusCode: 409);
         }
 
         return await Locate(d => d.UpdateLocation(req.Latitude, req.Longitude, clock.GetUtcNow()), ct);

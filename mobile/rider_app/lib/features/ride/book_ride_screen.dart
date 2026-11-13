@@ -312,7 +312,15 @@ class _BookRideScreenState extends ConsumerState<BookRideScreen> {
                     child: ListTile(
                       leading: Icon(vehicleIcon(d.vehicle)),
                       title: Text('${d.vehicle} · ₹${d.ratePerKm.toStringAsFixed(0)} per km'),
-                      subtitle: Text('${d.distanceKm} km away'),
+                      subtitle: Wrap(
+                        spacing: 12,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text('${d.distanceKm} km away'),
+                          // "☆ New driver · Verified" when unrated, "★ 4.5 · 2 ratings" with a few, "★ 4.8 (23)" with enough.
+                          DriverTrustBadge(average: d.ratingAverage, count: d.ratingCount),
+                        ],
+                      ),
                       // An empty circle shows the tile can be tapped; tapping the ticked one again un-chooses it.
                       trailing: Icon(d.id == _selectedId ? Icons.check_circle : Icons.radio_button_unchecked),
                       onTap: () => _pickDriver(d),
